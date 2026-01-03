@@ -1,50 +1,34 @@
 
 export type Role = 'user' | 'assistant';
-export type MessageType = 'text' | 'image' | 'file';
+export type MessageType = 'text' | 'image' | 'file' | 'audio' | 'chart';
 
 export interface Attachment {
   data: string; // Base64
   mimeType: string;
   name: string;
+  content?: string; // extracted text content
 }
 
 export type PanelId =
   | 'account' | 'preferences' | 'customize' | 'assistant' | 'shortcuts'
-  | 'tasks' | 'notifications' | 'connectors' | 'api' | 'pro' | 'allSettings' | 'plans' | 'portfolio';
+  | 'tasks' | 'notifications' | 'connectors' | 'api' | 'pro' | 'allSettings' | 'plans' | 'portfolio' | 'workspace';
 
 export interface MessageSource {
   title: string;
   url: string;
 }
 
-export type MotionStyle =
-  | 'none'
-  | 'subtle-fade'
-  | 'subtle-slide-up'
-  | 'floating-cards'
-  | 'parallax'
-  | 'spotlight';
-
-export interface MediaAsset {
-  type: 'image' | 'video' | 'logo';
-  url: string;
-  alt?: string;
-  caption?: string;
-  thumbnailUrl?: string;
-}
+export type TemplateType = 'minimal' | 'modern' | 'creative' | 'corporate' | 'dark';
 
 export interface PortfolioProjectItem {
   title: string;
   description: string;
-  role?: string;
-  techStack?: string[];
-  url?: string;
-  highlight?: string;
-  media?: MediaAsset[];
-  motionStyle?: MotionStyle;
+  role: string;
+  techStack: string[];
+  url: string;
+  highlight: string;
+  media: string[];
 }
-
-export type TemplateType = 'minimal' | 'modern' | 'creative' | 'corporate' | 'dark';
 
 export interface PortfolioProfile {
   name: string;
@@ -56,29 +40,32 @@ export interface PortfolioProfile {
   targetAudience: string;
   skills: { category: string; items: string[] }[];
   projects: PortfolioProjectItem[];
-  extras: {
-    testimonials: { name: string; quote: string; role: string }[];
-    certifications: string[];
-    contactLinks: { type: string; url: string }[];
-  };
+  extras: any;
   preferredLanguage: 'en' | 'ar';
   template: TemplateType;
 }
 
-export interface PortfolioSection {
-  id: string;
-  title: string;
-  kind: 'hero' | 'about' | 'skills' | 'projects' | 'gallery' | 'testimonials' | 'contact' | 'custom';
-  bodyHtml?: string;
-  items?: any[];
+export interface PortfolioResponse {
+  template: TemplateType;
+  sections: {
+    id: string;
+    title: string;
+    bodyHtml: string;
+  }[];
 }
 
-export interface PortfolioResponse {
-  sections: PortfolioSection[];
-  tone: 'formal' | 'casual' | 'case-study';
-  language: 'en' | 'ar';
-  suggestions: string[];
-  template: TemplateType;
+export interface Task {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+export interface Connector {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey?: string;
+  enabled: boolean;
 }
 
 export interface AppSettings {
@@ -92,6 +79,7 @@ export interface AppSettings {
   globalSystemInstruction: string;
   soundOnSend: boolean;
   soundOnReceive: boolean;
+  autoSpeech: boolean; // جديد
   desktopNotifications: boolean;
   showTokens: boolean;
   enableSourcesButton: boolean;
@@ -108,13 +96,9 @@ export interface Message {
   attachments?: Attachment[];
   sources?: MessageSource[];
   groundingMetadata?: any;
-  usage?: {
-    total_tokens: number;
-  };
-  replyTo?: {
-    content: string;
-    role: Role;
-  };
+  isThinking?: boolean;
+  usage?: { total_tokens: number };
+  replyTo?: string;
 }
 
 export interface ChatSession {
@@ -124,35 +108,15 @@ export interface ChatSession {
   updatedAt: number;
   messages: Message[];
   isPinned?: boolean;
-}
-
-export interface ChatSettings {
-  modelName: string;
-  temperature: number;
-  systemInstruction?: string;
-  enableWebGrounding?: boolean;
+  mode: 'general' | 'files' | 'image' | 'code' | 'voice'; // أوضاع الدردشة الجديدة
 }
 
 export interface ApiResponse {
   response: string;
   type: MessageType;
   imageUrl?: string;
+  audioData?: string;
   sources?: MessageSource[];
   groundingMetadata?: any;
-  meta?: Record<string, any>;
   error?: string;
-}
-
-export interface Task {
-  id: string;
-  title: string;
-  done: boolean;
-}
-
-export interface Connector {
-  id: string;
-  name: string;
-  baseUrl: string;
-  apiKey?: string;
-  enabled: boolean;
 }

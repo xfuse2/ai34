@@ -1,8 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatContainer from './components/ChatContainer';
-import PortfolioBuilder from './features/portfolio/PortfolioBuilder';
 import { useChatSessions } from './hooks/useChatSessions';
 import { useSettings } from './hooks/useSettings';
 import { callGeminiProxy } from './services/geminiService';
@@ -10,215 +9,162 @@ import { Message, PanelId, Attachment } from './types';
 import { Drawer } from './components/ui/Drawer';
 import { LanguageToggle } from './components/ui/LanguageToggle';
 import { SettingsProvider } from './contexts/SettingsContext';
-import { CrownIcon } from './components/ui/Icons';
+import { CrownIcon, XIcon } from './components/ui/Icons';
+import PortfolioBuilder from './features/portfolio/PortfolioBuilder';
 
-// Augment Window interface safely
+// تعريف واجهة aistudio للتعامل مع المفاتيح
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
     openSelectKey: () => Promise<void>;
   }
   interface Window {
-    // Add optional modifier to prevent modifier clash errors with other potential declarations of aistudio
     aistudio?: AIStudio;
   }
 }
 
 const AppContent: React.FC = () => {
   const { 
-    sessions, activeSession, activeId, setActiveId, createNewSession, 
-    clearSessionMessages, deleteSession, renameSession, togglePinSession, addMessageToSession, 
-    editMessageInSession, setSessions 
+    sessions, activeSession, activeId, setActiveId, setSessions, createNewSession, 
+    addMessageToSession 
   } = useChatSessions();
-
-  const { settings, t } = useSettings();
+  const { settings } = useSettings();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem('pro_ai_selected_model') || 'gemini-3-flash-preview');
+  const [selectedModel, setSelectedModel] = useState('gemini-3-flash-preview');
   const [activePanel, setActivePanel] = useState<PanelId | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
-  const [needsApiKey, setNeedsApiKey] = useState<boolean>(false);
+  const [needsApiKey, setNeedsApiKey] = useState(false);
 
-  useEffect(() => { localStorage.setItem('pro_ai_selected_model', selectedModel); }, [selectedModel]);
-
-  // التحقق من مفتاح API عند محاولة استخدام ميزات متقدمة
-  const checkApiKey = async () => {
-    if (window.aistudio) {
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        setNeedsApiKey(true);
-        return false;
+  // التحقق من حالة المفتاح عند التشغيل
+  useEffect(() => {
+    const checkInitialKey = async () => {
+      if (window.aistudio) {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        // إذا كان التطبيق يعتمد على موديلات Pro بشكل أساسي، يمكننا إظهار المطالبة فوراً
+        // لكننا هنا سنكتفي بالتحقق عند الحاجة أو إذا كان الموديل الحالي Pro
+        if (selectedModel.includes('pro') && !hasKey) {
+          setNeedsApiKey(true);
+        }
       }
-    }
-    return true;
-  };
+    };
+    checkInitialKey();
+  }, [selectedModel]);
 
   const handleOpenKeySelector = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
+      // وفقاً للتعليمات: نفترض النجاح فوراً لتجاوز Race Condition
       setNeedsApiKey(false);
-      // بعد فتح النافذة، نفترض أن المستخدم سيختار مفتاحاً ونستمر
     }
   };
 
-  const handleSend = async (content: string, replyTo?: Message['replyTo'], attachments?: Attachment[], useWeb?: boolean) => {
+  const handleNewSession = (mode: string = 'general') => {
+    const session = createNewSession();
+    setSessions(prev => prev.map(s => s.id === session.id ? { ...s, mode: mode as any } : s));
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
+  const handleSend = async (content: string, replyTo?: any, attachments?: Attachment[], useWeb?: boolean) => {
     if (!activeId || !activeSession) return;
-    
-    // لبعض المهام المعقدة، قد نحتاج لمفتاح مدفوع
-    if (selectedModel.includes('pro')) {
-      const ok = await checkApiKey();
-      if (!ok) return;
-    }
 
     const userMsg: Omit<Message, 'id'> = { 
-      role: 'user', 
-      content, 
-      timestamp: Date.now(), 
-      type: 'text', 
-      replyTo,
-      attachments 
+      role: 'user', content, timestamp: Date.now(), type: 'text', attachments 
     };
     addMessageToSession(activeId, userMsg);
     
     setIsLoading(true);
     try {
-      const result = await callGeminiProxy([...activeSession.messages, userMsg as Message], activeId, {
+      const result = await callGeminiProxy([...activeSession.messages, userMsg as Message], {
         modelName: selectedModel,
-        temperature: 0.7,
-        enableWebGrounding: useWeb !== undefined ? useWeb : webSearchEnabled,
-        systemInstruction: settings.globalSystemInstruction
+        mode: activeSession.mode,
+        enableWebGrounding: useWeb || webSearchEnabled
       });
 
-      if (result.error?.includes("Requested entity was not found")) {
+      // فحص دقيق للخطأ 403 أو PERMISSION_DENIED
+      const errorStr = (result.error || "").toLowerCase();
+      if (errorStr.includes("403") || errorStr.includes("permission_denied") || errorStr.includes("not have permission") || errorStr.includes("not found")) {
         setNeedsApiKey(true);
+        setIsLoading(false);
         return;
       }
 
       addMessageToSession(activeId, {
         role: 'assistant',
-        content: result.error ? `Pro AI Error: ${result.error}` : result.response,
+        content: result.error ? `Error: ${result.error}` : result.response,
         timestamp: Date.now(),
         type: result.type,
         mediaUrl: result.imageUrl,
         sources: result.sources,
         groundingMetadata: result.groundingMetadata
       });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
-  const handleRegenerate = async (messageId: string) => {
-    if (!activeId || !activeSession) return;
-    const msgIdx = activeSession.messages.findIndex(m => m.id === messageId);
-    if (msgIdx === -1) return;
-    
-    const updatedMessages = activeSession.messages.filter(m => m.id !== messageId);
-    setSessions(prev => prev.map(s => s.id === activeId ? { ...s, messages: updatedMessages } : s));
-
-    setIsLoading(true);
-    try {
-      const result = await callGeminiProxy(updatedMessages, activeId, {
-        modelName: selectedModel,
-        temperature: 0.7,
-        enableWebGrounding: webSearchEnabled,
-        systemInstruction: settings.globalSystemInstruction
-      });
-
-      if (result.error?.includes("Requested entity was not found")) {
-        setNeedsApiKey(true);
-        return;
+      if (result.audioData && settings.autoSpeech) {
+        const audio = new Audio(`data:audio/pcm;base64,${result.audioData}`);
+        audio.play();
       }
-
-      addMessageToSession(activeId, {
-        role: 'assistant',
-        content: result.error ? `Pro AI Error: ${result.error}` : result.response,
-        timestamp: Date.now(),
-        type: result.type,
-        mediaUrl: result.imageUrl,
-        sources: result.sources,
-        groundingMetadata: result.groundingMetadata
-      });
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Critical handleSend Error:", err);
+      if (err?.message?.includes("403") || err?.message?.includes("PERMISSION_DENIED")) {
+        setNeedsApiKey(true);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  // شاشة حجب اختيار المفتاح تظهر فقط كـ Overlay عند الحاجة
   const apiKeyOverlay = needsApiKey && (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[2000] flex flex-col items-center justify-center p-8 text-center" dir="rtl">
-      <div className="w-24 h-24 bg-brand/10 text-brand rounded-[2.5rem] flex items-center justify-center mb-8 animate-pulse">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[9999] flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-300" dir="rtl">
+      <div className="w-24 h-24 bg-brand/20 text-brand rounded-[2.5rem] flex items-center justify-center mb-8 animate-bounce shadow-2xl shadow-brand/20">
         <CrownIcon />
       </div>
-      <h2 className="text-3xl font-black mb-4 tracking-tighter uppercase text-white">تفعيل ميزات Pro</h2>
-      <p className="max-w-md text-secondaryText mb-8 leading-relaxed text-sm">
-        تحتاج لاستخدام مفتاح API خاص بك (مع تفعيل الفوترة) لمتابعة هذه العملية. 
-        <br />
-        <span className="text-xs opacity-50 mt-2 block">لن يتم تخزين مفتاحك، سيتم استخدامه للطلب الحالي فقط.</span>
+      <h2 className="text-3xl font-black mb-4 text-white tracking-tighter uppercase">تنشيط الوصول المتقدم</h2>
+      <p className="max-w-md text-secondaryText mb-10 text-sm leading-relaxed font-medium">
+        تم اكتشاف محاولة لاستخدام ميزات مقيدة (Gemini Pro أو البحث المتقدم). 
+        يجب عليك اختيار مفتاح API من مشروع Google Cloud مفعل به الفوترة.
+        <br/>
+        <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-brand underline mt-3 inline-block font-bold">تعرف على كيفية إعداد الفوترة</a>
       </p>
-      <div className="flex flex-col gap-4 w-full max-w-xs">
+      <div className="flex flex-col gap-4 w-full max-w-sm">
         <button 
-          type="button"
           onClick={handleOpenKeySelector}
-          className="w-full py-4 bg-brand text-white font-black rounded-2xl shadow-xl shadow-brand/20 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest text-xs"
+          className="w-full py-5 bg-brand text-white font-black rounded-3xl shadow-2xl shadow-brand/30 hover:scale-[1.02] active:scale-95 transition-all uppercase text-xs tracking-[0.2em]"
         >
           اختيار مفتاح API الآن
         </button>
         <button 
-          type="button"
           onClick={() => setNeedsApiKey(false)}
-          className="w-full py-3 bg-white/5 text-white/50 font-bold rounded-2xl hover:bg-white/10 transition-all text-xs"
+          className="w-full py-4 text-white/40 text-xs font-black hover:text-white transition-colors uppercase tracking-widest"
         >
-          تجاهل الآن
+          إلغاء والمتابعة بالمزايا الأساسية
         </button>
       </div>
     </div>
   );
 
   return (
-    <div 
-      dir={settings.lang === 'ar' ? 'rtl' : 'ltr'}
-      lang={settings.lang}
-      className={`flex w-full h-screen bg-appBg text-primaryText overflow-hidden ${settings.compactMode ? 'compact-ui' : ''}`} 
-      data-theme={settings.theme}
-    >
+    <div dir={settings.lang === 'ar' ? 'rtl' : 'ltr'} className="flex w-full h-screen bg-appBg text-primaryText overflow-hidden">
       {apiKeyOverlay}
-
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/45 z-[999] md:hidden animate-in fade-in duration-300"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
-
       <Sidebar
         sessions={sessions}
         activeId={activeId}
-        onSelect={(id) => { setActiveId(id); setIsSidebarOpen(false); }}
-        onNew={() => { createNewSession(); setIsSidebarOpen(false); }}
-        onRename={renameSession}
-        onDelete={deleteSession}
-        onTogglePin={togglePinSession}
-        onOpenSettings={(panel: any) => setActivePanel(panel)}
+        onSelect={setActiveId}
+        onNew={handleNewSession}
+        onRename={() => {}}
+        onDelete={() => {}}
+        onTogglePin={() => {}}
+        onOpenSettings={setActivePanel}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
-      <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-appBg relative overflow-hidden">
-        {activeId === 'portfolio' ? (
+      <main className="flex-1 flex flex-col min-w-0 bg-appBg relative">
+        {activePanel === 'portfolio' ? (
           <PortfolioBuilder onOpenSidebar={() => setIsSidebarOpen(true)} />
         ) : (
           <ChatContainer
-            session={activeSession}
+            session={activeSession as any}
             onSend={handleSend}
-            onEdit={(id, content) => editMessageInSession(activeId!, id, content)}
-            onDelete={(id) => setSessions(prev => prev.map(s => s.id === activeId ? { ...s, messages: s.messages.filter(m => m.id !== id) } : s))}
-            onRegenerate={handleRegenerate}
-            onClear={() => activeId && clearSessionMessages(activeId)}
             isLoading={isLoading}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
@@ -227,23 +173,17 @@ const AppContent: React.FC = () => {
             onToggleWebSearch={setWebSearchEnabled}
           />
         )}
-        
-        <Drawer 
-          activePanel={activePanel} 
-          onClose={() => setActivePanel(null)} 
-        />
+        <Drawer activePanel={activePanel} onClose={() => setActivePanel(null)} />
         <LanguageToggle />
       </main>
     </div>
   );
 };
 
-const App: React.FC = () => {
-  return (
-    <SettingsProvider>
-      <AppContent />
-    </SettingsProvider>
-  );
-};
+const App: React.FC = () => (
+  <SettingsProvider>
+    <AppContent />
+  </SettingsProvider>
+);
 
 export default App;

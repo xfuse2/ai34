@@ -1,6 +1,6 @@
 {
-  "name": "Pro AI 34",
-  "description": "A high-performance Gemini-powered chat application with persistent sessions, dark mode, and Markdown support.",
+  "name": "Pro AI Ultimate",
+  "description": "Multimodal AI Workspace with RAG, Image Gen, Voice, and Live Search.",
   "requestFramePermissions": [
     "camera",
     "microphone",

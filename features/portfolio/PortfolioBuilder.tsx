@@ -84,7 +84,12 @@ const PortfolioBuilder: React.FC<{ onOpenSidebar: () => void }> = ({ onOpenSideb
             projects: parsedData?.projects || prev.projects
           }));
         } catch (apiErr: any) {
-           setErrorMsg("خطأ في الاتصال: " + (apiErr.message || "فشل التحليل"));
+           const msg = (apiErr.message || "").toLowerCase();
+           if (msg.includes("403") || msg.includes("permission")) {
+             setErrorMsg("خطأ في الصلاحيات: يرجى اختيار مفتاح API مدفوع للمتابعة.");
+           } else {
+             setErrorMsg("خطأ في الاتصال: " + (apiErr.message || "فشل التحليل"));
+           }
         } finally {
           setIsParsing(false);
         }
@@ -110,7 +115,12 @@ const PortfolioBuilder: React.FC<{ onOpenSidebar: () => void }> = ({ onOpenSideb
       if (window.innerWidth < 1024) setActiveTab('preview');
     } catch (err: any) { 
       console.error(err);
-      setErrorMsg(err?.message || "حدث خطأ أثناء الاتصال بالخدمة. يرجى اختيار مفتاح API والمحاولة مرة أخرى.");
+      const msg = (err?.message || "").toLowerCase();
+      if (msg.includes("403") || msg.includes("permission") || msg.includes("not found")) {
+        setErrorMsg("خطأ 403: ليس لديك صلاحية لاستخدام هذا النموذج (Gemini Pro). يرجى التأكد من اختيار مفتاح API صالح من القائمة العلوية.");
+      } else {
+        setErrorMsg(err?.message || "حدث خطأ أثناء الاتصال بالخدمة. يرجى المحاولة مرة أخرى.");
+      }
     } finally { setIsGenerating(false); }
   };
 

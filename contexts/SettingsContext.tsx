@@ -35,6 +35,7 @@ const defaultSettings: AppSettings = {
   globalSystemInstruction: 'أنت Pro AI، مساعد ذكي ومفيد. قدم إجابات دقيقة وموثقة.',
   soundOnSend: true,
   soundOnReceive: true,
+  autoSpeech: true,
   desktopNotifications: false,
   showTokens: false,
   enableSourcesButton: true,

@@ -42,6 +42,7 @@ export const useChatSessions = () => {
       updatedAt: Date.now(),
       messages: [],
       isPinned: false,
+      mode: 'general',
     };
     setSessions(prev => [newSession, ...prev]);
     setActiveId(newSession.id);
@@ -63,13 +64,14 @@ export const useChatSessions = () => {
     setSessions(prev => {
       const filtered = prev.filter(s => s.id !== id);
       if (filtered.length === 0) {
-        const fresh = {
+        const fresh: ChatSession = {
           id: crypto.randomUUID(),
           title: 'New Chat',
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [],
           isPinned: false,
+          mode: 'general',
         };
         setActiveId(fresh.id);
         return [fresh];
