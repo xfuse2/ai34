@@ -1,0 +1,9 @@
+{
+  "name": "Pro AI 34",
+  "description": "A high-performance Gemini-powered chat application with persistent sessions, dark mode, and Markdown support.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ]
+}
